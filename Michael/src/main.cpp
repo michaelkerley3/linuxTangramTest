@@ -35,7 +35,7 @@ using namespace tangram;
 using namespace genericapi;
 using namespace serializers;
 using namespace transport;
-using namespace std::chrono_literals;
+//using namespace std::chrono_literals;
 
 bool sendMessage(Message& m, std::shared_ptr<TangramTransport> tport, LMCPSerializer& ser) {
     static std::vector<uint8_t> buffer;
@@ -191,7 +191,8 @@ int main(int argc, char **argv) {
     //rx->subscribe("afrl.cmasi.CameraAction");
 
     // Give the transport time to initialize & connect to the proxy
-    std::this_thread::sleep_for(10ms);
+    //std::this_thread::sleep_for(10ms);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
     // Message handling
     std::cout << "Waiting for first message..." << std::endl;
