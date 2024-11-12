@@ -71,8 +71,8 @@ std::cerr << "Failed to create transport" << std::endl;
     }
 
     std::string ip = "127.0.0.1";
-std::string sub_port = "6668";
-    std::string pub_port = "6667";
+std::string sub_port = "6667";
+    std::string pub_port = "6668";
 
     char* maybe_value = std::getenv("TANGRAM_TRANSPORT_zeromq_transport_HOSTNAME");
     if (maybe_value != nullptr) {
@@ -171,6 +171,7 @@ return false;
 }
 int add_subscriptions(std::shared_ptr<TangramTransport>& rx) {
     rx->subscribe("messages.RequestNumber");
+    rx->subscribe("eM");
     std::cout << "Subscribed to messages.RequestNumber" << std::endl;
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     return 0;
