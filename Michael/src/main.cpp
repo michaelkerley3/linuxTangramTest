@@ -3,13 +3,14 @@
 #include <memory>
 #include <thread>
 
-#include "TangramTransport.hpp"
-#include "TangramTransportZMQ.hpp"
-#include "DirectSerializer.hpp"
+// Tangram Pro-generated serializer and transport
+#include "Serializer.hpp"
+#include "TangramTransportTypes.h"
 #include "hi_DerivedEntityFactory.hpp"
+#include "TangramTransport.hpp"
+#include "LMCPSerializer.hpp"
 
-//#include "appset/pdw.hpp"
-//#include "appset/sample.hpp"
+// Tangram Pro-generated messages
 #include "hi/ethanToMichael.hpp"
 #include "hi/michaelToEthan.hpp"
 #include "hi/messageStruct.hpp"
@@ -19,138 +20,176 @@ using namespace tangram;
 using namespace genericapi;
 using namespace serializers;
 using namespace transport;
+//using namespace std::chrono_literals;
 
-
-
-
-int init_transports(std::shared_ptr<TangramTransport>& tx, std::shared_ptr<TangramTransport>& rx, bool addSubs = true);
-bool sendMessage(Message& m, std::shared_ptr<TangramTransport> tport, DirectSerializer& ser);
-bool recvMessage(Message& msg, std::shared_ptr<TangramTransport> tport, DirectSerializer& ser);
-int add_subscriptions(std::shared_ptr<TangramTransport>& rx);
-int handle_messages(std::shared_ptr<TangramTransport>& tx, std::shared_ptr<TangramTransport>& rx, DirectSerializer& ser);
-
-int main() {
-    std::cout << "Starting component" << std::endl;
-
-    std::shared_ptr<TangramTransport> tx;
-    std::shared_ptr<TangramTransport> rx;
-    if (init_transports(tx, rx) != 0) {
-        std::cerr << "Failed to initialize transports" << std::endl;
-        exit(1);
-    }
-
-    hi::DerivedEntityFactory factory;
-    DirectSerializer serializer(&factory);
-
-    auto ret = handle_messages(tx, rx, serializer);
-    if (ret != 0) {
-        std::cout << "Early exit while handling messages: " << ret << std::endl;
-        return 0;
-    }
-
-    std::cout << "Done handling messages" << std::endl;
-
-#ifdef DO_END_SLEEP
-    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-#endif
-}
-
-int init_transports(
-    std::shared_ptr<TangramTransport>& tx,
-    std::shared_ptr<TangramTransport>& rx,
-    bool addSubs
-) {
-TangramTransport::resetTransportOptions();
-
-    // Configure the transport
-    tx = std::make_shared<TangramTransportZMQ>();
-    rx = std::make_shared<TangramTransportZMQ>();
-    if (tx == nullptr || rx == nullptr) {
-std::cerr << "Failed to create transport" << std::endl;
-        exit(1);
-    }
-
-    std::string ip = "127.0.0.1";
-std::string sub_port = "6667";
-    std::string pub_port = "6668";
-
-    char* maybe_value = std::getenv("TANGRAM_TRANSPORT_zeromq_transport_HOSTNAME");
-    if (maybe_value != nullptr) {
-
-ip = maybe_value;
-        std::cout << "Using env hostname" << std::endl;
-    }
-
-    maybe_value = std::getenv("TANGRAM_TRANSPORT_zeromq_transport_PORTS");
-    if (maybe_value != nullptr) {
-std::string ports(maybe_value);
-        std::cout << "Using env ports" << std::endl;
-
-        // split the ports at the comma
-        auto comma_pos = ports.find(",");
-        if (comma_pos == std::string::npos) {
-std::cerr << "Unexpected lack of comma in PORTS env variable" << std::endl;
-        } else {
-            // Pub port, then sub port, because it should be reversed from the proxy
-            // (Proxy in platform will sub on 6667, and pub on 6668)
-            pub_port = ports.substr(0, comma_pos);
-            sub_port = ports.substr(comma_pos + 1);
-}
-    }
-
-    std::cout << "Using IP " << ip << std::endl;
-    std::cout << "Using Sub Port " << sub_port << std::endl;
-std::cout << "Using Pub Port " << pub_port << std::endl;
-
-    rx->setOption("SubscribeIP", ip);
-    rx->setOption("SubscribePort", sub_port);
-    tx->setOption("PublishIP", ip);
-    tx->setOption("PublishPort", pub_port);
-if (-1 == tx->open(TTF_WRITE)) {
-        std::cerr << "Failed to open tx transport" << std::endl;
-        return 1;
-    }
-    std::cout << "Opened tx transport" << std::endl;
-
-if (-1 == rx->open(TTF_READ)) {
-        std::cerr << "Failed to open rx transport" << std::endl;
-        return 1;
-    }
-    std::cout << "Opened rx transport" << std::endl;
-std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-
-    if (addSubs) {
-        add_subscriptions(rx);
-    }
-
-    return 0;
-}
-bool sendMessage(Message& m, std::shared_ptr<TangramTransport> tport, DirectSerializer& ser) {
+bool sendMessage(Message& m, std::shared_ptr<TangramTransport> tport, LMCPSerializer& ser) {
     static std::vector<uint8_t> buffer;
 
     buffer.clear();
 
     if (!ser.serialize(m, buffer)) {
-std::cerr << "Failed to serialize message " << m.getName() << std::endl;
+        std::cerr << "Failed to serialize message " << m.getName() << std::endl;
         return false;
     }
 
-    std::string topic = "messages." + m.getName();
-if (!tport->publish(buffer.data(), buffer.size(), topic)) {
+    std::string topic = "eM"; //"afrl.cmasi." + m.getName();
+
+    if (!tport->publish(buffer.data(), buffer.size(), topic)) {
         std::cerr << "Failed to publish message " << m.getName() << std::endl;
         return false;
     }
-    std::cout << "Sent message to: " << topic << std::endl;
-return true;
+
+    return true;
 }
 
+
+uint8_t reciveMessages(
+    Message& msg1,
+    std::shared_ptr<TangramTransport> tport,
+    LMCPSerializer& ser
+) {
+    static std::vector<uint8_t> buffer;
+
+    buffer.resize(tport->getMaxReceiveSize());
+    int32_t count = tport->recv(buffer.data(), buffer.size());
+    if (count < 0) {
+        std::cerr << "Failed to receive bytes for " << msg1.getName() << std::endl;
+        return false;
+    }
+    buffer.resize(count);
+
+    if (ser.deserialize(buffer, msg1)) {
+        std::cout << "Deserialized " << msg1.getName() << std::endl;
+        return 1;
+    }
+
+    return 0;
+}
+
+
+
+
+
+int main(int argc, char **argv) {
+    // Collect args
+    std::vector<std::string> args;
+    for (int i = 0; i < argc; ++i) {
+        args.push_back(std::string(argv[i]));
+    }
+
+    // First try to set configuration from environment variables. Then, try to set from args
+    // Args should override env
+    std::string ip = "127.0.0.1";
+    char* maybe_value = std::getenv("TANGRAM_TRANSPORT_zeromq_transport_HOSTNAME");
+    if (maybe_value != nullptr) {
+        ip = maybe_value;
+    }
+    if (args.size() > 1) {
+        ip = args[1];
+    }
+
+    std::string pub_port = "6667";
+    std::string sub_port = "6668";
+    // Expected to be of form 6667,6668 (pub_port,sub_port)
+
+    maybe_value = std::getenv("TANGRAM_TRANSPORT_zeromq_transport_PORTS");
+    if (maybe_value != nullptr) {
+        std::string ports(maybe_value);
+ 
+        // split the ports at the comma
+        auto comma_pos = ports.find(",");
+        if (comma_pos == std::string::npos) {
+            std::cerr << "Unexpected lack of comma in PORTS env variable" << std::endl;
+        } else {
+            // pub port, then sub port
+            pub_port = ports.substr(0, comma_pos);
+            sub_port = ports.substr(comma_pos + 1);
+        }
+    }
+    if (args.size() > 2) {
+        sub_port = args[2];
+    }
+    if (args.size() > 3) {
+        pub_port = args[3];
+    }
+
+    // Configure the factory & serializer
+    //afrl::cmasi::DerivedEntityFactory factory;
+    hi::DerivedEntityFactory factory; 
+    LMCPSerializer serializer(&factory);
+
+    // Configure the transport
+    std::shared_ptr<TangramTransport> tx = std::shared_ptr<TangramTransport>(TangramTransport::createTransport());
+    std::shared_ptr<TangramTransport> rx = std::shared_ptr<TangramTransport>(TangramTransport::createTransport());
+    if (tx == nullptr || rx == nullptr) {
+        std::cerr << "Failed to create transport" << std::endl;
+        exit(1);
+    }
+
+    rx->setOption("SubscribeIP", ip);
+    rx->setOption("SubscribePort", "6668");
+    //tx->setOption("PublishIP", ip);
+    //tx->setOption("PublishPort", pub_port);
+
+    if (-1 == tx->open(TTF_WRITE)) {
+        std::cerr << "Failed to open tx transport" << std::endl;
+        return 1;
+    }
+    std::cout << "Opened tx transport" << std::endl;
+    if (-1 == rx->open(TTF_READ)) {
+        std::cerr << "Failed to open rx transport" << std::endl;
+        return 1;
+    }
+    std::cout << "Opened rx transport" << std::endl;
+
+    // Subscribe to the topic that the message will come in on
+    //rx->subscribe("hi.ethanToMichael");
+    rx->subscribe("e2m");
+
+
+    // Give the transport time to initialize & connect to the proxy
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+
+
+    //reciving messages
+    hi::ethanToMichael e2m;
+    auto msgid = reciveMessages(e2m, rx, serializer);
+    if (msgid == 1) {
+        std::cout << "Received e2m" << std::endl;
+    } 
+   else {
+        std::cerr << "Failed to receive a proper message to start any sequence" << std::endl;
+        return 1;
+    }
+
+
+
+/*
+    //sending messages
+    hi::messageStruct mess; 
+    mess.setNum(1.0, true);
+    hi::michaelToEthan m2e;
+    m2e.setLocation(&mess, true);
+    if (!sendMessage(m2e, tx, serializer)) {
+        std::cerr << "Failed to send first MichaelToEthan" << std::endl;
+        return 1;
+    }
+    std::cout << "Sent MichaelToEthan" << std::endl;
+    
+*/
+
+    return 0;
+}
+
+
+/*
 bool recvMessage(
     Message& msg,
     std::shared_ptr<TangramTransport> tport,
-    DirectSerializer& ser
+    LMCPSerializer& ser
 ) {
-static std::vector<uint8_t> buffer;
+    static std::vector<uint8_t> buffer;
 
     buffer.resize(tport->getMaxReceiveSize());
     int32_t count = tport->recv(buffer.data(), buffer.size());
@@ -158,7 +197,7 @@ static std::vector<uint8_t> buffer;
         std::cerr << "Failed to receive bytes for " << msg.getName() << std::endl;
         return false;
     }
-buffer.resize(count);
+    buffer.resize(count);
     std::cout << "Received bytes for " << msg.getName() << std::endl;
 
     if (ser.deserialize(buffer, msg)) {
@@ -167,45 +206,7 @@ buffer.resize(count);
     } else {
         std::cerr << "Failed to deser " << msg.getName() << std::endl;
     }
-return false;
-}
-int add_subscriptions(std::shared_ptr<TangramTransport>& rx) {
-    rx->subscribe("messages.RequestNumber");
-    rx->subscribe("eM");
-    std::cout << "Subscribed to messages.RequestNumber" << std::endl;
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    return 0;
-}
 
-int handle_messages(
-    std::shared_ptr<TangramTransport>& tx,
-    std::shared_ptr<TangramTransport>& rx,
-    DirectSerializer& ser
-) {
-while (true) {
-        hi::ethanToMichael e2m;
-try {
-        if (!recvMessage(e2m, rx, ser)) {
-            std::cerr << "recvMessage failed" << std::endl;
-            return 1;
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "Exception in recvMessage: " << e.what() << std::endl;
-    }
-try {
-            hi::messageStruct mess; 
-        mess.setNum(1.0, true);
-        
-        hi::michaelToEthan m2e;
-        m2e.setLocation(&mess, true);
-
-            if (!sendMessage(m2e, tx, ser)) {
-                std::cerr << "sendMessage failed" << std::endl;
-            }
-        } catch (const std::exception& e) {
-            std::cerr << "Exception in sendMessage: " << e.what() << std::endl;
-        }
-    }
-
-    return 0;
+    return false;
 }
+*/
