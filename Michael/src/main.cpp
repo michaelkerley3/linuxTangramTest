@@ -59,6 +59,7 @@ int init_transports(
     TangramTransport::resetTransportOptions();
 
     // Configure the transport
+    //can change this depending on select3ed transport
     tx = std::make_shared<TangramTransportZMQ>();
     rx = std::make_shared<TangramTransportZMQ>();
     if (tx == nullptr || rx == nullptr)
@@ -114,6 +115,8 @@ int init_transports(
         return 1;
     }
     std::cout << "Opened tx transport" << std::endl;
+    //To run on tangram
+    // rx->open(TTF_READ))
     if (-1 == rx->open(TTF_READ | TTF_BROKERLESS))
     {
         std::cerr << "Failed to open rx transport" << std::endl;
