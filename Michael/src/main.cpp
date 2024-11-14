@@ -115,9 +115,10 @@ int init_transports(
         return 1;
     }
     std::cout << "Opened tx transport" << std::endl;
-    //To run on tangram
-    // rx->open(TTF_READ))
-    if (-1 == rx->open(TTF_READ | TTF_BROKERLESS))
+
+    // To run on tangram rx->open(TTF_READ))
+    // To run on local rx->open(TTF_READ | TTF_BROKERLESS)
+    if (-1 == rx->open(TTF_READ))
     {
         std::cerr << "Failed to open rx transport" << std::endl;
         return 1;
